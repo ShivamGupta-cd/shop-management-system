@@ -19,9 +19,32 @@ A desktop-based shop management application built using Python and Tkinter.
 
 ## ▶️ How to Run
 
-1. Install Python (3.x)
-2. Download this project
-3. Run:
+1. Make sure all files are inside a folder named `shop`
+
+Example structure:
+
+shop/
+├── main.py  ← (this is the file to run)
+├── gui.py
+├── database.py
+├── inventory.py
+├── invoice.py
+├── models.py
+├── sales.py
+├── update_db.py
+├── db/
+│   └── shop.db (auto-created)
+└── invoices/ (auto-created)
+
+2. Open terminal inside the `shop` folder
+
+3. Run this command:
+   on macos it is python3 gui.py
+   on windows it is py gui.py
+
+👉 `gui.py` is the starting point of the application.
+⚠️ Make sure you run the command from inside the `shop` folder.
+
 
 
 
@@ -36,3 +59,4 @@ A desktop-based shop management application built using Python and Tkinter.
 ## 👨‍💻 Author
 
 Shivam Gupta
+Thanks For Visiting 😊
