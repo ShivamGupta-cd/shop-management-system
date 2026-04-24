@@ -65,7 +65,12 @@ pip install reportlab
 ## 🖨 Invoice & Printing
 
 - Invoices are saved automatically in:
-  shop/invoices
+Documents/shop/invoices
+
+👉 This is outside the project folder (inside the user's Documents)
+
+### Printing behavior:
+
 - If **SumatraPDF is installed**, invoices will print automatically  
 - If not installed, the PDF will simply open  
 
@@ -74,14 +79,9 @@ pip install reportlab
 Download SumatraPDF:  
 https://www.sumatrapdfreader.org/download-free-pdf-viewer  
 
----
+> The app works even without SumatraPDF
 
-## 📌 Notes
 
-- Database (`shop.db`) is created automatically
-- Designed for small shop / wholesale use
-
----
 
 ## 👨‍💻 Author
 
