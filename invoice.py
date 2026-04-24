@@ -143,9 +143,8 @@ def generate_invoice(
                     file_path
                 ], shell=True)
             else:
-                print("SumatraPDF not found")
+                # fallback → just open PDF
+                os.startfile(file_path)
 
         except Exception as e:
             print("Print failed:", e)
-
-    return file_path
