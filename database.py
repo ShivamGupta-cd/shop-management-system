@@ -4,12 +4,9 @@ import sys
 
 # ------------------ BASE PATH ------------------
 def get_base_path():
-    # If app is compiled (PyInstaller)
     if getattr(sys, 'frozen', False):
         return os.path.dirname(sys.executable)
-    # If running normally
     return os.path.dirname(os.path.abspath(__file__))
-
 
 BASE_DIR = get_base_path()
 
@@ -30,7 +27,7 @@ def setup_database():
     conn = connect()
     cursor = conn.cursor()
 
-    # ITEMS TABLE
+    # ---------------- ITEMS TABLE ----------------
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,7 +39,17 @@ def setup_database():
     )
     """)
 
-    # SALES TABLE
+    # ✅ SAFE COLUMN ADDS
+    for col, query in [
+        ("buy_price", "ALTER TABLE items ADD COLUMN buy_price REAL DEFAULT 0"),
+        ("mrp", "ALTER TABLE items ADD COLUMN mrp REAL DEFAULT 0"),
+    ]:
+        try:
+            cursor.execute(query)
+        except:
+            pass
+
+    # ---------------- SALES TABLE ----------------
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS sales (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,7 +58,13 @@ def setup_database():
     )
     """)
 
-    # SALE ITEMS TABLE
+    # ✅ BUYER LINK
+    try:
+        cursor.execute("ALTER TABLE sales ADD COLUMN buyer_id INTEGER")
+    except:
+        pass
+
+    # ---------------- SALE ITEMS TABLE ----------------
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS sale_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,6 +76,17 @@ def setup_database():
     )
     """)
 
+    # ✅ IMPORTANT FOR PROFIT + DISCOUNT
+    for col, query in [
+        ("buy_price", "ALTER TABLE sale_items ADD COLUMN buy_price REAL"),
+        ("discount", "ALTER TABLE sale_items ADD COLUMN discount REAL DEFAULT 0"),
+    ]:
+        try:
+            cursor.execute(query)
+        except:
+            pass
+
+    # ---------------- BUYERS TABLE ----------------
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS buyers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,13 +96,17 @@ def setup_database():
     """)
 
 
+def fix_old_buy_price():
     conn = connect()
     cursor = conn.cursor()
 
-    try:
-        cursor.execute("ALTER TABLE sales ADD COLUMN buyer_id INTEGER")
-    except:
-        pass  # already exists
+    cursor.execute("""
+    UPDATE sale_items
+    SET buy_price = (
+        SELECT buy_price FROM items WHERE items.id = sale_items.item_id
+    )
+    WHERE buy_price IS NULL OR buy_price = 0
+    """)
 
     conn.commit()
     conn.close()
