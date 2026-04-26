@@ -19,7 +19,7 @@ LIGHT_BG = "#F4F6F7"
 def add_item_gui():
     win = tk.Toplevel(root)
     win.title("Add Item")
-    win.geometry("520x400")
+    win.geometry("520x420")  # slightly increased
 
     # ---------------- FORM ----------------
     form_frame = tk.LabelFrame(win, text="Item Details", padx=10, pady=10)
@@ -48,14 +48,19 @@ def add_item_gui():
     upc_entry = tk.Entry(form_frame)
     upc_entry.grid(row=2, column=3, padx=5, pady=5)
 
-    # Row 3
-    tk.Label(form_frame, text="Cartons").grid(row=3, column=0, padx=5, pady=5)
-    carton_entry = tk.Entry(form_frame, width=8)
-    carton_entry.grid(row=3, column=1, padx=5, pady=5)
+    # ✅ NEW ROW (Buy Price)
+    tk.Label(form_frame, text="Buy Price").grid(row=3, column=0, padx=5, pady=5)
+    bp_entry = tk.Entry(form_frame)
+    bp_entry.grid(row=3, column=1, padx=5, pady=5)
 
-    tk.Label(form_frame, text="Extra Units").grid(row=3, column=2, padx=5, pady=5)
+    # Row 4 (shifted down)
+    tk.Label(form_frame, text="Cartons").grid(row=4, column=0, padx=5, pady=5)
+    carton_entry = tk.Entry(form_frame, width=8)
+    carton_entry.grid(row=4, column=1, padx=5, pady=5)
+
+    tk.Label(form_frame, text="Extra Units").grid(row=4, column=2, padx=5, pady=5)
     unit_entry = tk.Entry(form_frame, width=8)
-    unit_entry.grid(row=3, column=3, padx=5, pady=5)
+    unit_entry.grid(row=4, column=3, padx=5, pady=5)
 
     # ---------------- LIVE STOCK PREVIEW ----------------
     preview_label = tk.Label(win, text="Total Units: 0", font=("Arial", 11, "bold"))
@@ -89,6 +94,7 @@ def add_item_gui():
             up = float(up_entry.get())
             mrp = float(mrp_entry.get())
             upc = int(upc_entry.get())
+            bp = float(bp_entry.get() or 0)   # ✅ NEW
 
             cartons = int(carton_entry.get() or 0)
             extra_units = int(unit_entry.get() or 0)
@@ -108,17 +114,18 @@ def add_item_gui():
         if existing:
             cursor.execute("""
                 UPDATE items
-                SET carton_price=?, unit_price=?, mrp=?, units_per_carton=?, stock_units=stock_units+?
+                SET carton_price=?, unit_price=?, mrp=?, units_per_carton=?, 
+                    stock_units=stock_units+?, buy_price=?
                 WHERE id=?
-            """, (cp, up, mrp, upc, stock, existing[0]))
+            """, (cp, up, mrp, upc, stock, bp, existing[0]))
 
             messagebox.showinfo("Updated", "Item updated!")
 
         else:
             cursor.execute("""
-                INSERT INTO items (name, carton_price, unit_price, mrp, units_per_carton, stock_units)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (name, cp, up, mrp, upc, stock))
+                INSERT INTO items (name, carton_price, unit_price, mrp, units_per_carton, stock_units, buy_price)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (name, cp, up, mrp, upc, stock, bp))
 
             messagebox.showinfo("Success", "New item added!")
 
@@ -126,7 +133,7 @@ def add_item_gui():
         conn.close()
 
         # clear fields
-        for e in [name_entry, cp_entry, up_entry, mrp_entry, upc_entry, carton_entry, unit_entry]:
+        for e in [name_entry, cp_entry, up_entry, mrp_entry, upc_entry, bp_entry, carton_entry, unit_entry]:
             e.delete(0, tk.END)
 
         preview_label.config(text="Total Units: 0")
@@ -143,7 +150,10 @@ def add_item_gui():
     ).pack(pady=10)
 
     # ---------------- KEYBOARD FLOW ----------------
-    entries = [name_entry, cp_entry, up_entry, mrp_entry, upc_entry, carton_entry, unit_entry]
+    entries = [
+        name_entry, cp_entry, up_entry, mrp_entry,
+        upc_entry, bp_entry, carton_entry, unit_entry
+    ]
 
     for i in range(len(entries) - 1):
         entries[i].bind("<Return>", lambda e, idx=i: entries[idx + 1].focus_set())
@@ -185,13 +195,18 @@ def view_stock_gui():
 
     tree.pack(fill="both", expand=True)
 
+    # ✅ TAG COLORS
+    tree.tag_configure("low", background="#fff3cd")     # yellow (low stock)
+    tree.tag_configure("no_buy", background="#f8d7da")  # red (no buy price)
+
     # ---------------- LOAD DATA ----------------
     def load_data(search_text=""):
         conn = connect()
         cursor = conn.cursor()
 
+        # ✅ include buy_price
         cursor.execute("""
-            SELECT id, name, stock_units, units_per_carton, mrp, carton_price, unit_price
+            SELECT id, name, stock_units, units_per_carton, mrp, carton_price, unit_price, buy_price
             FROM items
             WHERE name LIKE ?
         """, ('%' + search_text + '%',))
@@ -199,7 +214,7 @@ def view_stock_gui():
         tree.delete(*tree.get_children())
 
         for row in cursor.fetchall():
-            item_id, name, stock, upc, mrp, cp, up = row
+            item_id, name, stock, upc, mrp, cp, up, bp = row
 
             cartons = stock // upc if upc else 0
             units = stock % upc if upc else stock
@@ -215,9 +230,13 @@ def view_stock_gui():
                 f"{up:.2f}"
             ))
 
-            # 🔥 LOW STOCK LOGIC
-            if cartons == 0 and units < 5:
-                tree.item(item, tags=("low",))
+            # 🔥 PRIORITY: BUY PRICE CHECK FIRST
+            if not bp or bp == 0:
+                tree.item(item, tags=("no_buy",))   # 🔴 red
+
+            # 🔥 LOW STOCK
+            elif cartons == 0 and units < 5:
+                tree.item(item, tags=("low",))      # 🟡 yellow
 
         conn.close()
 
@@ -237,6 +256,17 @@ def view_stock_gui():
             tree.selection_set(items[0])
 
     tree.bind("<Return>", focus_first)
+
+    # ---------------- DOUBLE CLICK EDIT ----------------
+    def open_edit(event=None):
+        selected = tree.selection()
+        if not selected:
+            return
+
+        item_id = int(tree.item(selected[0])["values"][0])
+        edit_item_gui(item_id)
+
+    tree.bind("<Double-1>", open_edit)
 
     # ---------------- INITIAL LOAD ----------------
     load_data()
@@ -361,6 +391,8 @@ def make_sale_gui():
     win.geometry("850x850")
 
     cart = {}
+    last_item_id = None
+    rate_manually_changed = False
 
     # ---------------- BUYER ----------------
     buyer_frame = tk.LabelFrame(win, text="Buyer Details", padx=10, pady=10)
@@ -399,16 +431,88 @@ def make_sale_gui():
     qty_entry.insert(0, "1")
 
     type_var = tk.StringVar(value="carton")
-    tk.Radiobutton(search_frame, text="Carton", variable=type_var, value="carton").grid(row=0, column=4)
-    tk.Radiobutton(search_frame, text="Unit", variable=type_var, value="unit").grid(row=0, column=5)
+    tk.Radiobutton(
+        search_frame,
+        text="Carton",
+        variable=type_var,
+        value="carton",
+        command=lambda: [update_rate_label(), load_selected_item()]
+    ).grid(row=0, column=4)
 
-    tk.Label(search_frame, text="Disc ₹").grid(row=0, column=6)
+    tk.Radiobutton(
+        search_frame,
+        text="Unit",
+        variable=type_var,
+        value="unit",
+        command=lambda: [update_rate_label(), load_selected_item()]
+    ).grid(row=0, column=5)
+
+    # ✅ NEW RATE FIELD
+    rate_label = tk.Label(search_frame, text="Carton Rate ₹")
+    rate_label.grid(row=0, column=6)
+    price_entry = tk.Entry(search_frame, width=8)
+    price_entry.grid(row=0, column=7)
+
+    def on_rate_change(event=None):
+        nonlocal rate_manually_changed
+        rate_manually_changed = True
+
+    price_entry.bind("<KeyRelease>", on_rate_change)
+
+    def update_rate_label():
+        if type_var.get() == "carton":
+            rate_label.config(text="Carton Rate ₹")
+        else:
+            rate_label.config(text="Unit Rate ₹")
+    # Discount (shifted right)
+    tk.Label(search_frame, text="Disc ₹").grid(row=0, column=8)
     discount_entry = tk.Entry(search_frame, width=6)
-    discount_entry.grid(row=0, column=7)
+    discount_entry.grid(row=0, column=9)
     discount_entry.insert(0, "0")
 
     result_list = tk.Listbox(search_frame, height=6)
-    result_list.grid(row=1, column=0, columnspan=8, sticky="ew")
+    result_list.grid(row=1, column=0, columnspan=10, sticky="ew", pady=5)
+    def load_selected_item(event=None):
+        nonlocal last_item_id, rate_manually_changed
+
+        selection = result_list.curselection()
+        if not selection:
+            return
+
+        selected = result_list.get(selection[0])
+        item_id = int(selected.split(" - ")[0])
+
+        conn = connect()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT carton_price, unit_price
+            FROM items WHERE id=?
+        """, (item_id,))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return
+
+        cp, up = row
+
+        # choose correct price
+        price = cp if type_var.get() == "carton" else up
+
+        # 🔥 KEY LOGIC
+        if item_id != last_item_id:
+            # New item → ALWAYS update rate
+            price_entry.delete(0, tk.END)
+            price_entry.insert(0, str(price))
+            rate_manually_changed = False
+            last_item_id = item_id
+
+        elif not rate_manually_changed:
+            # Same item but user didn’t edit → update
+            price_entry.delete(0, tk.END)
+            price_entry.insert(0, str(price))
 
     # ---------------- CART ----------------
     from tkinter import ttk
@@ -440,6 +544,9 @@ def make_sale_gui():
 
     final_label = tk.Label(right_frame, text="Final: 0", font=("Arial", 12, "bold"), fg="green")
     final_label.pack(anchor="w")
+
+    profit_label = tk.Label(right_frame, text="Profit: 0", font=("Arial", 11, "bold"), fg="blue")
+    profit_label.pack(anchor="w")
 
 
     def search_buyer(event=None):
@@ -506,10 +613,20 @@ def make_sale_gui():
         cart_table.delete(*cart_table.get_children())
 
         subtotal = 0
+        total_profit = 0
 
-        for item in cart.values():
+        for item_id, item in cart.items():
             total = (item["qty"] * item["price"]) - item["discount"]
             subtotal += total
+
+            # ✅ calculate cost
+            if item["type"] == "carton":
+                cost = item["qty"] * item["buy_price"]
+            else:
+                cost = item["qty"] * (item["buy_price"] / item["upc"] if item["upc"] else 0)
+
+            profit = total - cost
+            total_profit += profit
 
             cart_table.insert("", "end", values=(
                 item["name"],
@@ -531,12 +648,16 @@ def make_sale_gui():
         gst_label.config(text=f"GST: {gst_amt:.2f}")
         final_label.config(text=f"Final: {final:.2f}")
 
+        # ✅ NEW PROFIT DISPLAY
+        profit_label.config(text=f"Profit: {total_profit:.2f}")
+
     # ---------------- ADD TO CART ----------------
     def add_to_cart(event=None):
         selected = result_list.get(tk.ACTIVE)
         if not selected:
             return
 
+        # ---------------- INPUT ----------------
         try:
             qty = int(qty_entry.get())
             discount = float(discount_entry.get() or 0)
@@ -546,12 +667,13 @@ def make_sale_gui():
 
         item_id = int(selected.split(" - ")[0])
 
+        # ---------------- FETCH ITEM ----------------
         conn = connect()
         cursor = conn.cursor()
 
-        # ✅ ADD MRP HERE
         cursor.execute("""
-            SELECT name, carton_price, unit_price, mrp, units_per_carton, stock_units
+            SELECT name, carton_price, unit_price, mrp,
+                units_per_carton, stock_units, buy_price
             FROM items WHERE id=?
         """, (item_id,))
 
@@ -561,19 +683,26 @@ def make_sale_gui():
         if not data:
             return
 
-        # ✅ unpack with MRP
-        name, cp, up, mrp, upc, stock = data
+        # ✅ IMPORTANT FIX: include bp here
+        name, cp, up, mrp, upc, stock, bp = data
 
+        # ---------------- PRICE ----------------
         sale_type = type_var.get()
-        price = cp if sale_type == "carton" else up
 
+        try:
+            price = float(price_entry.get())
+        except:
+            messagebox.showerror("Error", "Enter valid rate")
+            return
+
+        # ---------------- STOCK CHECK ----------------
         needed = qty * upc if sale_type == "carton" else qty
 
         if stock < needed:
             messagebox.showerror("Stock Error", "Not enough stock!")
             return
 
-        # ✅ STORE MRP IN CART
+        # ---------------- ADD TO CART ----------------
         if item_id in cart and cart[item_id]["type"] == sale_type:
             cart[item_id]["qty"] += qty
             cart[item_id]["discount"] += discount
@@ -583,12 +712,13 @@ def make_sale_gui():
                 "qty": qty,
                 "type": sale_type,
                 "price": price,
-                "mrp": mrp,          # 👈 THIS WAS MISSING
+                "mrp": mrp,
                 "upc": upc,
-                "discount": discount
+                "discount": discount,
+                "buy_price": bp or 0   # ✅ safe fallback
             }
 
-        # RESET
+        # ---------------- RESET ----------------
         qty_entry.delete(0, tk.END)
         qty_entry.insert(0, "1")
 
@@ -673,10 +803,22 @@ def make_sale_gui():
             for item_id, item in cart.items():
                 used = item["qty"] * item["upc"] if item["type"] == "carton" else item["qty"]
 
+                # ✅ get buy price from items table
+                cursor.execute("SELECT buy_price FROM items WHERE id=?", (item_id,))
+                bp = cursor.fetchone()[0] or 0
+
                 cursor.execute("""
-                    INSERT INTO sale_items (sale_id, item_id, quantity, type, price)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (sale_id, item_id, item["qty"], item["type"], item["price"]))
+                    INSERT INTO sale_items (sale_id, item_id, quantity, type, price, buy_price, discount)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    sale_id,
+                    item_id,
+                    item["qty"],
+                    item["type"],
+                    item["price"],
+                    bp,
+                    item["discount"]
+                ))
 
                 cursor.execute(
                     "UPDATE items SET stock_units = stock_units - ? WHERE id=?",
@@ -725,8 +867,16 @@ def make_sale_gui():
     buyer_search.bind("<KeyRelease>", search_buyer)
     buyer_list.bind("<Return>", fill_buyer)    
 
-    result_list.bind("<Return>", lambda e: qty_entry.focus_set())
-    qty_entry.bind("<Return>", lambda e: discount_entry.focus_set())
+    def select_item_and_move(event=None):
+        load_selected_item()
+        qty_entry.focus_set()
+
+    result_list.bind("<<ListboxSelect>>", load_selected_item)
+    result_list.bind("<Up>", load_selected_item)
+    result_list.bind("<Down>", load_selected_item)
+    result_list.bind("<Return>", select_item_and_move)
+    qty_entry.bind("<Return>", lambda e: price_entry.focus_set())
+    price_entry.bind("<Return>", lambda e: discount_entry.focus_set())
     discount_entry.bind("<Return>", add_to_cart)
 
     cart_table.bind("<Delete>", lambda e: remove_item())
@@ -945,7 +1095,7 @@ def show_sale_details(sale_id):
     ).pack(pady=10)
 
 
-def edit_item_gui():
+def edit_item_gui(item_id=None):
     win = tk.Toplevel(root)
     win.title("Edit Item")
     win.geometry("650x500")
@@ -993,14 +1143,19 @@ def edit_item_gui():
     upc_entry = tk.Entry(right_frame)
     upc_entry.grid(row=2, column=3, padx=5, pady=5)
 
-    # Row 3 (🔥 FIXED STOCK UI)
-    tk.Label(right_frame, text="Cartons").grid(row=3, column=0, padx=5, pady=5)
-    carton_entry = tk.Entry(right_frame, width=10)
-    carton_entry.grid(row=3, column=1, padx=5, pady=5)
+    # Row 3 (Buy Price)
+    tk.Label(right_frame, text="Buy Price").grid(row=3, column=0, padx=5, pady=5)
+    bp_entry = tk.Entry(right_frame)
+    bp_entry.grid(row=3, column=1, padx=5, pady=5)
 
-    tk.Label(right_frame, text="Units").grid(row=3, column=2, padx=5, pady=5)
+    # Row 4 (Stock)
+    tk.Label(right_frame, text="Cartons").grid(row=4, column=0, padx=5, pady=5)
+    carton_entry = tk.Entry(right_frame, width=10)
+    carton_entry.grid(row=4, column=1, padx=5, pady=5)
+
+    tk.Label(right_frame, text="Units").grid(row=4, column=2, padx=5, pady=5)
     unit_entry = tk.Entry(right_frame, width=10)
-    unit_entry.grid(row=3, column=3, padx=5, pady=5)
+    unit_entry.grid(row=4, column=3, padx=5, pady=5)
 
     # ---------------- SEARCH ----------------
     def search(event=None):
@@ -1031,16 +1186,17 @@ def edit_item_gui():
         if not selected:
             return
 
-        item_id = int(selected.split(" - ")[0])
-        selected_id = item_id
+        item_id_local = int(selected.split(" - ")[0])
+        selected_id = item_id_local
 
         conn = connect()
         cursor = conn.cursor()
 
         cursor.execute("""
-            SELECT name, carton_price, unit_price, mrp, units_per_carton, stock_units
+            SELECT name, carton_price, unit_price, mrp,
+                   units_per_carton, stock_units, buy_price
             FROM items WHERE id=?
-        """, (item_id,))
+        """, (item_id_local,))
 
         row = cursor.fetchone()
         conn.close()
@@ -1048,18 +1204,19 @@ def edit_item_gui():
         if not row:
             return
 
-        name, cp, up, mrp, upc, stock = row
+        name, cp, up, mrp, upc, stock, bp = row
 
-        # clear all
-        for e in [name_entry, cp_entry, up_entry, mrp_entry, upc_entry, carton_entry, unit_entry]:
+        # clear fields
+        for e in [name_entry, cp_entry, up_entry, mrp_entry, upc_entry, bp_entry, carton_entry, unit_entry]:
             e.delete(0, tk.END)
 
-        # fill values
+        # fill
         name_entry.insert(0, name)
         cp_entry.insert(0, cp)
         up_entry.insert(0, up)
         mrp_entry.insert(0, mrp)
         upc_entry.insert(0, upc)
+        bp_entry.insert(0, bp or 0)
 
         cartons = stock // upc if upc else 0
         units = stock % upc if upc else stock
@@ -1082,6 +1239,7 @@ def edit_item_gui():
             up = float(up_entry.get())
             mrp = float(mrp_entry.get())
             upc = int(upc_entry.get())
+            bp = float(bp_entry.get() or 0)
 
             cartons = int(carton_entry.get() or 0)
             units = int(unit_entry.get() or 0)
@@ -1095,7 +1253,6 @@ def edit_item_gui():
         conn = connect()
         cursor = conn.cursor()
 
-        # prevent duplicate name
         cursor.execute(
             "SELECT id FROM items WHERE LOWER(name)=? AND id!=?",
             (name, selected_id)
@@ -1108,9 +1265,10 @@ def edit_item_gui():
 
         cursor.execute("""
             UPDATE items
-            SET name=?, carton_price=?, unit_price=?, mrp=?, units_per_carton=?, stock_units=?
+            SET name=?, carton_price=?, unit_price=?, mrp=?,
+                units_per_carton=?, stock_units=?, buy_price=?
             WHERE id=?
-        """, (name, cp, up, mrp, upc, stock, selected_id))
+        """, (name, cp, up, mrp, upc, stock, bp, selected_id))
 
         conn.commit()
         conn.close()
@@ -1130,18 +1288,16 @@ def edit_item_gui():
         cursor = conn.cursor()
 
         cursor.execute("DELETE FROM items WHERE id=?", (selected_id,))
-
         conn.commit()
         conn.close()
 
         messagebox.showinfo("Deleted", "Item removed")
-
         search()
         search_entry.focus_set()
 
     # ---------------- BUTTONS ----------------
     btn_frame = tk.Frame(right_frame)
-    btn_frame.grid(row=4, column=0, columnspan=4, pady=10)
+    btn_frame.grid(row=5, column=0, columnspan=4, pady=10)
 
     tk.Button(btn_frame, text="✔ Save", bg="green", fg="white", width=12, command=save).grid(row=0, column=0, padx=5)
     tk.Button(btn_frame, text="❌ Delete", bg="red", fg="white", width=12, command=delete).grid(row=0, column=1, padx=5)
@@ -1149,20 +1305,33 @@ def edit_item_gui():
     # ---------------- KEYBOARD ----------------
     search_entry.bind("<KeyRelease>", search)
     search_entry.bind("<Down>", lambda e: item_list.focus_set())
-
     item_list.bind("<Return>", load_item)
+    item_list.bind("<Delete>", delete)
 
-    entries = [name_entry, cp_entry, up_entry, mrp_entry, upc_entry, carton_entry, unit_entry]
+    entries = [name_entry, cp_entry, up_entry, mrp_entry, upc_entry, bp_entry, carton_entry, unit_entry]
 
     for i in range(len(entries) - 1):
         entries[i].bind("<Return>", lambda e, idx=i: entries[idx + 1].focus_set())
 
     entries[-1].bind("<Return>", save)
 
-    item_list.bind("<Delete>", delete)
-
     win.bind("<F5>", lambda e: save())
     win.bind("<F6>", lambda e: delete())
+
+    # ---------------- AUTO LOAD (STEP 2) ----------------
+    if item_id:
+        conn = connect()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT id, name FROM items WHERE id=?", (item_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            item_list.insert(tk.END, f"{row[0]} - {row[1]}")
+            item_list.selection_set(0)
+            item_list.activate(0)
+            load_item()
 
     search_entry.focus_set()
 
@@ -1199,7 +1368,6 @@ def sales_report_gui():
 
         text = result_box.get(selected[0])
 
-        # ignore non-sale lines
         if "Sale #" not in text:
             return
 
@@ -1210,8 +1378,31 @@ def sales_report_gui():
 
         show_sale_details(sale_id)
 
-    # bind AFTER function is defined
     result_box.bind("<Double-1>", open_details)
+
+    # ---------------- CALCULATION CORE ----------------
+    def process_rows(rows):
+        sale_profit = {}
+        sale_total = {}
+
+        for sale_id, dt, qty, typ, price, buy_price, discount, upc in rows:
+
+            # ✅ Revenue (apply discount properly)
+            revenue = (qty * price) - (discount or 0)
+
+            # ✅ Cost
+            if typ == "carton":
+                cost = qty * (buy_price or 0)
+            else:
+                cost = qty * ((buy_price or 0) / upc if upc else 0)
+
+            # ✅ Profit
+            profit = revenue - cost
+
+            sale_profit[sale_id] = sale_profit.get(sale_id, 0) + profit
+            sale_total[sale_id] = sale_total.get(sale_id, 0) + revenue
+
+        return sale_total, sale_profit
 
     # ---------------- DAILY ----------------
     def show_daily():
@@ -1224,33 +1415,45 @@ def sales_report_gui():
         conn = connect()
         cursor = conn.cursor()
 
+        # ✅ FIXED QUERY (added si.discount)
         cursor.execute("""
-            SELECT id, date, total 
-            FROM sales 
-            WHERE DATE(date) = DATE(?)
-            ORDER BY id DESC
+            SELECT s.id, s.date,
+                si.quantity, si.type, si.price,
+                si.buy_price,
+                si.discount,
+                i.units_per_carton
+            FROM sales s
+            JOIN sale_items si ON s.id = si.sale_id
+            JOIN items i ON i.id = si.item_id
+            WHERE DATE(s.date) = DATE(?)
         """, (date,))
 
-        data = cursor.fetchall()
+        rows = cursor.fetchall()
         conn.close()
 
         result_box.delete(0, tk.END)
 
-        if not data:
+        if not rows:
             result_box.insert(tk.END, "No sales found")
-            total_label.config(text="Daily Total: ₹0.00")
+            total_label.config(text="Daily Total: ₹0.00 | Profit: ₹0.00")
             return
 
-        total = 0
+        sale_total, sale_profit = process_rows(rows)
 
-        for sale_id, full_date, amount in data:
+        total = 0
+        total_profit = 0
+
+        for sale_id in sale_total:
             result_box.insert(
                 tk.END,
-                f"{full_date} | Sale #{sale_id} → ₹{amount:.2f}"
+                f"{date} | Sale #{sale_id} → ₹{sale_total[sale_id]:.2f} | Profit ₹{sale_profit[sale_id]:.2f}"
             )
-            total += amount
+            total += sale_total[sale_id]
+            total_profit += sale_profit[sale_id]
 
-        total_label.config(text=f"Daily Total: ₹{total:.2f}")
+        total_label.config(
+            text=f"Daily Total: ₹{total:.2f} | Profit: ₹{total_profit:.2f}"
+        )
 
     # ---------------- MONTHLY ----------------
     def show_monthly():
@@ -1263,39 +1466,52 @@ def sales_report_gui():
         conn = connect()
         cursor = conn.cursor()
 
+        # ✅ FIXED QUERY (added si.discount)
         cursor.execute("""
-            SELECT id, date, total 
-            FROM sales 
-            WHERE date LIKE ?
-            ORDER BY id DESC
+            SELECT s.id, s.date,
+                si.quantity, si.type, si.price,
+                si.buy_price,
+                si.discount,
+                i.units_per_carton
+            FROM sales s
+            JOIN sale_items si ON s.id = si.sale_id
+            JOIN items i ON i.id = si.item_id
+            WHERE s.date LIKE ?
         """, (month + "%",))
 
-        data = cursor.fetchall()
+        rows = cursor.fetchall()
         conn.close()
 
         result_box.delete(0, tk.END)
 
-        if not data:
+        if not rows:
             result_box.insert(tk.END, "No sales found")
-            total_label.config(text="Monthly Total: ₹0.00")
+            total_label.config(text="Monthly Total: ₹0.00 | Profit: ₹0.00")
             return
 
-        total = 0
+        sale_total, sale_profit = process_rows(rows)
 
-        for sale_id, date, amount in data:
+        total = 0
+        total_profit = 0
+
+        for sale_id in sale_total:
             result_box.insert(
                 tk.END,
-                f"{date} | Sale #{sale_id} → ₹{amount:.2f}"
+                f"Sale #{sale_id} → ₹{sale_total[sale_id]:.2f} | Profit ₹{sale_profit[sale_id]:.2f}"
             )
-            total += amount
+            total += sale_total[sale_id]
+            total_profit += sale_profit[sale_id]
 
-        total_label.config(text=f"Monthly Total: ₹{total:.2f}")
-
+        total_label.config(
+            text=f"Monthly Total: ₹{total:.2f} | Profit: ₹{total_profit:.2f}"
+        )
     # ---------------- BUTTONS ----------------
     tk.Button(win, text="Show Daily Report", command=show_daily).pack(pady=5)
     tk.Button(win, text="Show Monthly Report", command=show_monthly).pack(pady=5)
 
     date_entry.focus_set()
+
+
     
 
 def delete_sale(sale_id):
